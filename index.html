@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анализ скриншотов договоров: номера закупок</title>
+<style>
+:root{--bg:#f3f5f8;--surface:#fff;--ink:#17202e;--muted:#5d6a7e;--line:#d8dee8;--accent:#1f3a5f;--accent-ink:#fff;--head:#e8edf4;--ok:#1d6b45;--err:#a32a2a;--warn:#8a5a00}
+@media (prefers-color-scheme:dark){:root{--bg:#10151d;--surface:#18202b;--ink:#e6ebf2;--muted:#9aa6b8;--line:#2b3646;--accent:#6f9bd6;--accent-ink:#0e1520;--head:#222d3b;--ok:#6cc79a;--err:#ee8a8a;--warn:#e6b25a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Arial,Helvetica,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 18px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 10px}
+.sub{color:var(--muted);margin:0 0 22px;max-width:75ch}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px;margin-bottom:16px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+button,label.btn{font:inherit;font-weight:bold;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);padding:9px 16px;border-radius:4px;cursor:pointer;display:inline-block}
+button.sec{background:transparent;color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink);width:100%}
+input[type=file]{display:none}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);flex:1;min-width:200px}
+.drop{border:2px dashed var(--line);border-radius:6px;padding:26px;text-align:center;color:var(--muted);margin-bottom:12px}
+.drop.on{border-color:var(--accent);color:var(--ink)}
+.msg{font-size:14px;margin:8px 0 0}.ok{color:var(--ok)}.err{color:var(--err)}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.stats{display:none;flex-wrap:wrap;gap:22px;align-items:center;margin:0 0 12px;color:var(--muted);font-size:14px}.stats b{color:var(--ink)}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:760px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--head);font-size:14px;white-space:nowrap}
+td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+td.n{width:40px;color:var(--muted)}
+td[contenteditable]:focus{outline:2px solid var(--accent);background:var(--head)}
+tr.skip td{opacity:.45}
+td.src{font-size:12px;color:var(--muted);max-width:180px;word-break:break-all}
+.tag{font-size:12px;color:var(--warn)}
+td.x button{padding:2px 8px;font-weight:normal}
+tfoot td{font-weight:bold;background:var(--head);border-bottom:0}
+.empty{padding:32px;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Анализ скриншотов договоров</h1>
+<p class="sub">Загрузите скриншоты карточек договоров с zakup.sk.kz. Сайт сам считает номер закупки, поставщика и сумму договора и соберёт итоговую таблицу. Скриншоты не сохраняются на сервере сайта.</p>
+
+<div class="panel">
+<h2>Настройки распознавания</h2>
+<div class="row">
+<label class="f">Способ
+<select id="mode">
+<option value="ai">Через Claude API (точнее)</option>
+<option value="ocr">В браузере, без ключа (менее точно)</option>
+</select></label>
+<label class="f" id="keyBox">Ключ Claude API
+<input type="password" id="key" placeholder="sk-ant-..." autocomplete="off"></label>
+<label class="f" id="modelBox">Модель
+<select id="model"><option value="claude-sonnet-5-5">claude-sonnet-5-5 (точнее)</option><option value="claude-haiku-5-5">claude-haiku-5-5 (дешевле)</option></select></label>
+</div>
+<p class="hint" id="keyHint">Ключ хранится только в вашем браузере и отправляется только в Anthropic. Как получить ключ, написано в README. Пользуйтесь сайтом только на своём компьютере.</p>
+</div>
+
+<div class="panel">
+<div class="drop" id="drop">Перетащите скриншоты сюда или вставьте из буфера (Ctrl+V)</div>
+<div class="row">
+<label class="btn" for="inp">Выбрать скриншоты</label>
+<input type="file" id="inp" accept="image/*" multiple>
+<label class="f">Статус содержит<input id="st" value="согласовании"></label>
+<label class="f">Ответственный содержит<input id="rp" value="Ауеспаева"></label>
+</div>
+<p class="msg" id="msg" role="status"></p>
+</div>
+
+<div class="stats" id="stats">
+<span>Договоров в итоге: <b id="s1">0</b></span>
+<span>Уникальных закупок: <b id="s2">0</b></span>
+<span>Сумма, тенге: <b id="s3">0</b></span>
+<button class="sec" id="copy">Копировать номера закупок</button>
+<button class="sec" id="xl">Скачать Excel</button>
+<button class="sec" id="clr">Очистить всё</button>
+</div>
+
+<div class="tw"><table>
+<thead><tr><th>№</th><th>Номер закупки</th><th>Наименование поставщика</th><th class="r">Сумма договора, тенге</th><th>Файл</th><th></th></tr></thead>
+<tbody id="tb"><tr><td colspan="6" class="empty">Таблица появится после загрузки скриншотов.</td></tr></tbody>
+<tfoot id="tf"></tfoot>
+</table></div>
+<p class="hint">Ячейки таблицы можно править вручную: нажмите на значение. Строки, не подходящие под статус или ответственного, затемнены и не входят в итог.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+var $=function(i){return document.getElementById(i)};
+var rows=[];
+var nm=function(s){return String(s||'').toLowerCase().replace(/ё/g,'е')};
+var num=function(s){if(typeof s==='number')return s;var n=parseFloat(String(s==null?'':s).replace(/[\s\u00a0]/g,'').replace(',','.'));return isNaN(n)?0:n};
+var fmt=function(n){return n.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2})};
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+function msg(t,c){var m=$('msg');m.textContent=t||'';m.className='msg '+(c||'')}
+
+/* настройки */
+try{$('key').value=localStorage.getItem('zk_key')||'';$('mode').value=localStorage.getItem('zk_mode')||'ai';$('model').value=localStorage.getItem('zk_model')||'claude-sonnet-5-5'}catch(e){}
+function modeUI(){var ai=$('mode').value==='ai';$('keyBox').style.display=$('modelBox').style.display=$('keyHint').style.display=ai?'':'none'}
+modeUI();
+$('mode').onchange=function(){try{localStorage.setItem('zk_mode',this.value)}catch(e){}modeUI()};
+$('key').onchange=function(){try{localStorage.setItem('zk_key',this.value.trim())}catch(e){}};
+$('model').onchange=function(){try{localStorage.setItem('zk_model',this.value)}catch(e){}};
+$('st').oninput=$('rp').oninput=render;
+
+/* загрузка файлов */
+$('inp').onchange=function(){handle([].slice.call(this.files));this.value=''};
+var drop=$('drop');
+['dragenter','dragover'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add('on')})});
+['dragleave','drop'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.remove('on')})});
+drop.addEventListener('drop',function(e){handle([].slice.call(e.dataTransfer.files))});
+document.addEventListener('paste',function(e){var f=[].slice.call(e.clipboardData.files||[]);if(f.length)handle(f)});
+
+var busy=false;
+async function handle(files){
+  files=files.filter(function(f){return /^image\//.test(f.type)});
+  if(!files.length){msg('Выберите файлы изображений (PNG, JPG).','err');return}
+  if(busy){msg('Дождитесь окончания обработки.','err');return}
+  var ai=$('mode').value==='ai';
+  if(ai&&!$('key').value.trim()){msg('Введите ключ Claude API или выберите распознавание в браузере.','err');return}
+  busy=true;var okc=0,bad=0;
+  for(var i=0;i<files.length;i++){
+    msg('Обработка '+(i+1)+' из '+files.length+': '+files[i].name+'…');
+    try{
+      var o=ai?await viaClaude(files[i]):await viaOcr(files[i]);
+      o.file=files[i].name||('скриншот '+(rows.length+1));o.src=ai?'ai':'ocr';
+      if(!o.zak&&!o.sum)throw new Error('на скриншоте не найдены номер закупки и сумма');
+      addRow(o);okc++;
+    }catch(err){bad++;console.error(err);msg('Ошибка в файле «'+files[i].name+'»: '+err.message,'err');await new Promise(function(r){setTimeout(r,1200)})}
+  }
+  busy=false;render();
+  msg('Готово. Распознано: '+okc+(bad?', с ошибкой: '+bad:'')+'.',bad?'err':'ok');
+}
+function addRow(o){
+  var key=o.id||(o.zak+'|'+o.sup+'|'+o.sum);
+  for(var i=0;i<rows.length;i++)if(rows[i].key===key){msg('Повтор пропущен: закупка '+o.zak,'err');return}
+  o.key=key;o.sum=num(o.sum);rows.push(o);
+}
+
+/* Claude API */
+function toB64(file){
+  return new Promise(function(res,rej){
+    var fr=new FileReader();
+    fr.onload=function(){
+      if(file.size<4500000){res({type:file.type||'image/png',data:String(fr.result).split(',')[1]});return}
+      var img=new Image();img.onload=function(){
+        var s=Math.min(1,2000/Math.max(img.width,img.height)),c=document.createElement('canvas');
+        c.width=img.width*s;c.height=img.height*s;c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        res({type:'image/jpeg',data:c.toDataURL('image/jpeg',.9).split(',')[1]})};
+      img.onerror=rej;img.src=fr.result};
+    fr.onerror=rej;fr.readAsDataURL(file);
+  });
+}
+var PROMPT='На скриншоте карточка договора портала закупок. Верни только JSON без пояснений и без markdown: '+
+'{"contract_id":"число из адресной строки после contract-card/, иначе пустая строка",'+
+'"zakupka":"номер из поля «Сведения о закупке», только цифры",'+
+'"supplier":"наименование из поля «Поставщик», фразу «Товарищество с ограниченной ответственностью» сокращай до ТОО",'+
+'"sum":"число из поля «Общая сумма в тенге» без пробелов, десятичный разделитель точка",'+
+'"status":"текст после «Статус:»",'+
+'"responsible":"ФИО из поля «Ответственный по договору»"}. '+
+'Если поле не видно, верни для него пустую строку. Ничего не выдумывай.';
+async function viaClaude(file){
+  var img=await toB64(file);
+  var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
+    'content-type':'application/json','x-api-key':$('key').value.trim(),'anthropic-version':'2023-06-01',
+    'anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:$('model').value,max_tokens:600,messages:[{role:'user',content:[
+      {type:'image',source:{type:'base64',media_type:img.type,data:img.data}},{type:'text',text:PROMPT}]}]})});
+  if(!r.ok){var t=await r.text();throw new Error('API '+r.status+': '+t.slice(0,160))}
+  var j=await r.json();
+  var txt=(j.content||[]).map(function(c){return c.text||''}).join('');
+  var m=txt.match(/\{[\s\S]*\}/);if(!m)throw new Error('ответ без данных');
+  var o=JSON.parse(m[0]);
+  return {id:String(o.contract_id||'').trim(),zak:String(o.zakupka||'').replace(/\D/g,''),sup:String(o.supplier||'').trim(),sum:o.sum,st:String(o.status||''),who:String(o.responsible||'')};
+}
+
+/* OCR в браузере */
+async function viaOcr(file){
+  var url=URL.createObjectURL(file);
+  var res=await Tesseract.recognize(url,'rus+eng');
+  URL.revokeObjectURL(url);
+  var T=res.data.text,g=function(re){var m=T.match(re);return m?m[1].trim():''};
+  var zak=g(/Сведения\s+о\s+закупке:?\s*(\d{5,9})/i)||g(/итогов[_\s]*(\d{5,9})/i);
+  var sup=g(/Поставщик:?\s*([^\n]+)/i).replace(/Товарищество с ограниченной ответственностью/i,'ТОО');
+  return {id:'',zak:zak,sup:sup,sum:g(/Общая\s+сумма\s+в\s+тенге:?\s*([\d\s.,]+)/i),st:g(/Статус:?\s*([^\n]+)/i),who:g(/(\S*\s*\S*\s*Ауеспаев\S*)/i)};
+}
+
+/* таблица */
+function match(r){
+  var a=nm($('st').value),b=nm($('rp').value);
+  return (!a||nm(r.st).indexOf(a)>-1||!r.st)&&(!b||nm(r.who).indexOf(b)>-1||!r.who);
+}
+function render(){
+  var tb=$('tb');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="empty">Таблица появится после загрузки скриншотов.</td></tr>';$('tf').innerHTML='';$('stats').style.display='none';return}
+  var n=0;
+  tb.innerHTML=rows.map(function(r,i){
+    var ok=match(r);if(ok)n++;
+    return '<tr class="'+(ok?'':'skip')+'"><td class="n">'+(ok?n:'–')+'</td>'+
+    '<td contenteditable data-i="'+i+'" data-k="zak">'+esc(r.zak)+'</td>'+
+    '<td contenteditable data-i="'+i+'" data-k="sup">'+esc(r.sup)+'</td>'+
+    '<td class="r" contenteditable data-i="'+i+'" data-k="sum">'+fmt(r.sum)+'</td>'+
+    '<td class="src">'+esc(r.file)+(r.src==='ocr'?'<br><span class="tag">проверить значения</span>':'')+(ok?'':'<br><span class="tag">не подходит по условиям</span>')+'</td>'+
+    '<td class="x"><button class="sec" data-del="'+i+'" title="Удалить строку">×</button></td></tr>'}).join('');
+  totals();
+}
+function totals(){
+  var t=0,u={},c=0;
+  rows.forEach(function(r){if(match(r)){t+=r.sum;u[r.zak]=1;c++}});
+  $('s1').textContent=c;$('s2').textContent=Object.keys(u).length;$('s3').textContent=fmt(t);
+  $('tf').innerHTML='<tr><td colspan="3">Итого</td><td class="r">'+fmt(t)+'</td><td colspan="2"></td></tr>';
+  $('stats').style.display='flex';
+}
+$('tb').addEventListener('focusout',function(e){
+  var el=e.target;if(!el.dataset||el.dataset.i==null)return;
+  var r=rows[+el.dataset.i],k=el.dataset.k,v=el.textContent.trim();
+  r[k]=k==='sum'?num(v):v;if(k==='sum')el.textContent=fmt(r.sum);totals();
+});
+$('tb').addEventListener('click',function(e){var d=e.target.dataset;if(d&&d.del!=null){rows.splice(+d.del,1);render()}});
+function shown(){return rows.filter(match)}
+$('copy').onclick=function(){
+  var s={},u=[];shown().forEach(function(r){if(!s[r.zak]){s[r.zak]=1;u.push(r.zak)}});
+  try{navigator.clipboard.writeText(u.join('\n'));msg('Номера закупок скопированы: '+u.length+'.','ok')}catch(e){msg('Не удалось скопировать.','err')}
+};
+$('xl').onclick=function(){
+  var data=[['№','Номер закупки','Наименование поставщика','Сумма договора, тенге']],t=0;
+  shown().forEach(function(r,i){data.push([i+1,+r.zak||r.zak,r.sup,r.sum]);t+=r.sum});
+  data.push(['','','Итого',t]);
+  var ws=XLSX.utils.aoa_to_sheet(data);ws['!cols']=[{wch:5},{wch:14},{wch:48},{wch:22}];
+  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Договоры');XLSX.writeFile(wb,'dogovory_zakup.xlsx');
+};
+$('clr').onclick=function(){rows=[];render();msg('')};
+</script>
+</body>
+</html>
